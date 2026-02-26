@@ -8,6 +8,7 @@ class MapState:
         self.grid_size = 50
         self.grid_offset_x = 0
         self.grid_offset_y = 0
+        self.background_image = None
 
     def add_item(self, path, q, r, item_type="token", scale=1.0, rotation=0):
         self.items.append({
@@ -30,10 +31,12 @@ class MapState:
     def clear(self):
         self.items = []
         self.drawings = []
+        self.background_image = None
 
     def to_dict(self):
         return {
             "version": 1,
+            "background_image": self.background_image,
             "background_color": self.background_color,
             "grid_size": self.grid_size,
             "grid_offset_x": self.grid_offset_x,
@@ -51,6 +54,7 @@ class MapState:
             data = json.load(f)
         
         self.background_color = data.get("background_color", "#202020")
+        self.background_image = data.get("background_image", None)
         self.grid_size = data.get("grid_size", 50)
         self.grid_offset_x = data.get("grid_offset_x", 0)
         self.grid_offset_y = data.get("grid_offset_y", 0)

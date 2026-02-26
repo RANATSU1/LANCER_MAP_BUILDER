@@ -33,6 +33,7 @@ class MapBuilderApp:
         self.paint_mode = tk.BooleanVar(value=False)
         self.paint_color = tk.StringVar(value="white")
         self.current_drawing = None
+        self.app_mode = tk.StringVar(value="GUSTAV_NHP")
         
         # Bind delete keys
         self.root.bind("<Delete>", self.delete_selected_item)
@@ -59,6 +60,14 @@ class MapBuilderApp:
         ttk.Checkbutton(self.toolbar, text="Paint Mode", variable=self.paint_mode, style="Toolbutton").pack(side="left", padx=2, pady=5)
         ttk.Combobox(self.toolbar, textvariable=self.paint_color, values=["white", "red", "blue", "green", "yellow", "black"], state="readonly", width=8).pack(side="left", padx=2, pady=5)
         ttk.Button(self.toolbar, text="Clear Paint", command=self.clear_paint).pack(side="left", padx=2, pady=5)
+        
+        ttk.Separator(self.toolbar, orient="vertical").pack(side="left", padx=5, fill="y")
+        self.mode_cb = ttk.Combobox(self.toolbar, textvariable=self.app_mode, values=["GUSTAV_NHP", "WEBER_NHP"], state="readonly", width=12)
+        self.mode_cb.pack(side="left", padx=5, pady=5)
+        
+        self.btn_load_bg = ttk.Button(self.toolbar, text="Load Map PNG", command=self.load_background_image)
+        if self.app_mode.get() == "WEBER_NHP":
+            self.btn_load_bg.pack(side="left", padx=5, pady=5)
         
         # Paned Window
         self.paned = ttk.PanedWindow(self.root, orient="horizontal")
@@ -190,17 +199,64 @@ class MapBuilderApp:
 
         # Initial Draw
         self.root.after(10, self.draw_wrapper)
+        self.app_mode.trace_add("write", self.on_mode_change)
 
     def populate_tree(self):
+        # Clear existing items
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+            
         # assets structure: { Pack: { Category: [paths] } }
         for pack, categories in self.assets.items():
             pack_node = self.tree.insert("", "end", text=pack, open=False)
+            has_children = False
             for cat, paths in categories.items():
+                if self.app_mode.get() == "WEBER_NHP" and cat != "Tokens":
+                    continue
                 cat_node = self.tree.insert(pack_node, "end", text=cat, open=False)
                 for path in paths:
                     filename = os.path.basename(path)
                     # Store full path in values
                     self.tree.insert(cat_node, "end", text=filename, values=(path,))
+                    has_children = True
+            if not has_children:
+                self.tree.delete(pack_node)
+
+    def on_mode_change(self, *args):
+        self.populate_tree()
+        if hasattr(self, 'btn_load_bg'):
+            if self.app_mode.get() == "WEBER_NHP":
+                self.btn_load_bg.pack(side="left", padx=5, pady=5)
+            else:
+                self.btn_load_bg.pack_forget()
+        self.draw_wrapper()
+
+    def load_background_image(self):
+        f = filedialog.askopenfilename(
+            title="Select Background Image",
+            filetypes=[("Image Files", "*.png *.jpg *.jpeg *.bmp"), ("All Files", "*.*")]
+        )
+        if f:
+            self.map_state.background_image = f
+            
+            # Auto-fit the camera and scale to the loaded image
+            bg_img = self.get_image(f)
+            if bg_img:
+                orig_w, orig_h = bg_img.size
+                cw = self.canvas.winfo_width()
+                ch = self.canvas.winfo_height()
+                
+                if cw > 0 and orig_w > 0:
+                    scale_w = cw / orig_w
+                    scale_h = ch / orig_h
+                    # Use max to ensure the image covers the entire canvas without gray borders
+                    self.scale = max(scale_w, scale_h)
+                    
+                    # Center the camera on the image
+                    self.camera_x = orig_w / 2
+                    self.camera_y = orig_h / 2
+                    
+            self.draw_wrapper()
 
     def on_asset_select(self, event):
         selected = self.tree.selection()
@@ -661,6 +717,27 @@ class MapBuilderApp:
         gx = self.map_state.grid_offset_x
         gy = self.map_state.grid_offset_y
         
+        bg_w, bg_h = None, None
+        # Draw Background Image (Behind Grid)
+        if hasattr(self.map_state, 'background_image') and self.map_state.background_image:
+            bg_img = self.get_image(self.map_state.background_image)
+            if bg_img:
+                orig_w, orig_h = bg_img.size
+                bg_w, bg_h = orig_w, orig_h
+                display_w = int(orig_w * self.scale)
+                display_h = int(orig_h * self.scale)
+                
+                sx = (0 - self.camera_x) * self.scale + cx
+                sy = (0 - self.camera_y) * self.scale + cy
+                
+                try:
+                    resized_bg = bg_img.resize((display_w, display_h), Image.Resampling.NEAREST)
+                    tk_bg_img = ImageTk.PhotoImage(resized_bg)
+                    self._tk_refs.append(tk_bg_img)
+                    self.canvas.create_image(sx, sy, image=tk_bg_img, anchor="nw", tags="background")
+                except Exception as e:
+                    print(f"Error resizing background: {e}")
+        
         # Grid Drawing
         q_center, r_center = self.grid.pixel_to_hex(self.camera_x - gx, self.camera_y - gy)
         range_rad = 20 # Draw radius
@@ -674,6 +751,12 @@ class MapBuilderApp:
                 wx += gx
                 wy += gy
                 
+                # Restrict grid to background image in WEBER mode
+                if self.app_mode.get() == "WEBER_NHP" and bg_w is not None and bg_h is not None:
+                    # check if hex center is outside boundaries (with a little margin)
+                    if not (-self.grid.size <= wx <= bg_w + self.grid.size and -self.grid.size <= wy <= bg_h + self.grid.size):
+                        continue
+
                 # World to Screen
                 sx = (wx - self.camera_x) * self.scale + cx
                 sy = (wy - self.camera_y) * self.scale + cy
