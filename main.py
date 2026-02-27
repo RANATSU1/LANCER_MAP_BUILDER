@@ -1,6 +1,6 @@
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-from PIL import Image, ImageTk
+from tkinter import ttk, filedialog, messagebox, colorchooser, simpledialog
+from PIL import Image, ImageTk, ImageDraw
 import os
 import math
 
@@ -40,7 +40,38 @@ class MapBuilderApp:
         self.root.bind("<BackSpace>", self.delete_selected_item)
         self.root.bind("<Escape>", self.deselect_all)
 
+        self.apply_theme()
         self.setup_ui()
+
+    def apply_theme(self):
+        style = ttk.Style()
+        style.theme_use('clam')
+        
+        bg_color = "#000000"
+        fg_color = "#39ff14"
+        sel_bg = "#004400"
+        font = ("Consolas", 10, "bold")
+        
+        self.root.configure(bg=bg_color)
+        
+        style.configure(".", background=bg_color, foreground=fg_color, font=font)
+        style.configure("TFrame", background=bg_color)
+        style.configure("TLabel", background=bg_color, foreground=fg_color)
+        style.configure("TButton", background="#0a0a0a", foreground=fg_color, bordercolor=fg_color, lightcolor=fg_color, darkcolor=fg_color, font=font)
+        style.map("TButton", background=[("active", "#112211")], foreground=[("active", fg_color)])
+        style.configure("TCombobox", fieldbackground=bg_color, background="#0a0a0a", foreground=fg_color, arrowcolor=fg_color)
+        style.map("TCombobox", fieldbackground=[("readonly", bg_color)], foreground=[("readonly", fg_color)])
+        style.configure("TCheckbutton", background=bg_color, foreground=fg_color)
+        style.map("TCheckbutton", background=[("active", bg_color)])
+        style.configure("Treeview", background=bg_color, fieldbackground=bg_color, foreground=fg_color, font=font, borderwidth=0)
+        style.map("Treeview", background=[("selected", sel_bg)], foreground=[("selected", fg_color)])
+        style.configure("Treeview.Heading", background="#0a0a0a", foreground=fg_color, bordercolor=fg_color)
+        style.configure("TLabelframe", background=bg_color, foreground=fg_color, bordercolor=fg_color)
+        style.configure("TLabelframe.Label", background=bg_color, foreground=fg_color)
+        style.configure("TEntry", fieldbackground=bg_color, foreground=fg_color, insertcolor=fg_color, bordercolor=fg_color)
+        style.configure("TSeparator", background=fg_color)
+        style.configure("TPanedwindow", background=bg_color)
+        style.configure("Vertical.TScrollbar", background="#0a0a0a", troughcolor=bg_color, arrowcolor=fg_color, bordercolor=fg_color)
 
     def setup_ui(self):
         # Main Layout: Sidebar (Left) | Canvas (Center) | Toolbar (Top)
@@ -96,7 +127,7 @@ class MapBuilderApp:
 
         # Asset Preview
         ttk.Label(self.sidebar, text="Preview").pack(anchor="w", padx=5, pady=5)
-        self.preview_label = ttk.Label(self.sidebar, text="No Selection", anchor="center", background="#303030", foreground="white")
+        self.preview_label = ttk.Label(self.sidebar, text="No Selection", anchor="center", background="#000000", foreground="#39ff14")
         self.preview_label.pack(fill="x", padx=5, pady=5, ipady=20)
 
         # Attachment Panel
@@ -113,9 +144,9 @@ class MapBuilderApp:
         self.lbl_attachment_status.pack(fill="x", padx=5, pady=5)
         
         # Attachment Preview (Image or Text)
-        self.attachment_preview_lbl = ttk.Label(self.attachment_frame, background="#404040", anchor="center")
+        self.attachment_preview_lbl = ttk.Label(self.attachment_frame, background="#000000", anchor="center")
         # self.attachment_preview_lbl.pack(fill="both", padx=5, pady=5, expand=True) # Packed dynamically
-        self.attachment_text_preview = tk.Text(self.attachment_frame, height=6, width=30, bg="#404040", fg="white", state="disabled")
+        self.attachment_text_preview = tk.Text(self.attachment_frame, height=6, width=30, bg="#000000", fg="#39ff14", font=("Consolas", 10, "bold"), insertbackground="#39ff14", relief="solid", highlightthickness=1, highlightbackground="#39ff14", state="disabled")
         # Don't pack text initially
 
         # Stats Panel
@@ -171,7 +202,8 @@ class MapBuilderApp:
         self.offset_y_entry.bind("<Return>", self.update_grid_config)
         self.offset_y_entry.bind("<FocusOut>", self.update_grid_config)
         
-        ttk.Button(self.grid_controls, text="Apply", command=self.update_grid_config).grid(row=3, column=0, columnspan=2, pady=5)
+        ttk.Button(self.grid_controls, text="Color", command=self.choose_grid_color).grid(row=3, column=0, padx=5, pady=5)
+        ttk.Button(self.grid_controls, text="Apply", command=self.update_grid_config).grid(row=3, column=1, padx=5, pady=5)
 
         # Canvas Area
         self.canvas_frame = ttk.Frame(self.paned)
@@ -183,7 +215,7 @@ class MapBuilderApp:
         
         self.setup_right_sidebar()
         
-        self.canvas = tk.Canvas(self.canvas_frame, bg="#202020")
+        self.canvas = tk.Canvas(self.canvas_frame, bg="#000000", highlightthickness=1, highlightbackground="#39ff14", highlightcolor="#39ff14")
         self.canvas.pack(fill="both", expand=True)
         
         # Bindings
@@ -234,7 +266,7 @@ class MapBuilderApp:
     def load_background_image(self):
         f = filedialog.askopenfilename(
             title="Select Background Image",
-            filetypes=[("Image Files", "*.png *.jpg *.jpeg *.bmp"), ("All Files", "*.*")]
+            filetypes=[("Image Files", "*.png *.jpg *.jpeg *.bmp *.gif *.webp *.tiff *.tif"), ("All Files", "*.*")]
         )
         if f:
             self.map_state.background_image = f
@@ -327,7 +359,7 @@ class MapBuilderApp:
                 
                 # Try preview
                 ext = os.path.splitext(linked)[1].lower()
-                if ext in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']:
+                if ext in ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.tiff', '.tif']:
                     # Image Preview
                     try:
                         img = Image.open(linked)
@@ -470,7 +502,7 @@ class MapBuilderApp:
         
         term_scroll = ttk.Scrollbar(term_frame)
         term_scroll.pack(side="right", fill="y")
-        self.term_text = tk.Text(term_frame, height=10, width=30, bg="#101010", fg="lime", font=("Consolas", 9), yscrollcommand=term_scroll.set)
+        self.term_text = tk.Text(term_frame, height=10, width=30, bg="#000000", fg="#39ff14", font=("Consolas", 10, "bold"), insertbackground="#39ff14", relief="solid", highlightthickness=1, highlightbackground="#39ff14", yscrollcommand=term_scroll.set)
         self.term_text.pack(fill="both", expand=True, padx=2, pady=2)
         term_scroll.config(command=self.term_text.yview)
         
@@ -668,6 +700,12 @@ class MapBuilderApp:
                 return None
         return self.loaded_images[path]
 
+    def choose_grid_color(self):
+        color_code = colorchooser.askcolor(title="Choose grid color", initialcolor=self.map_state.grid_color)
+        if color_code[1]:
+            self.map_state.grid_color = color_code[1]
+            self.draw_wrapper()
+
     def update_grid_config(self, event=None):
         try:
             self.map_state.grid_size = self.grid_size_var.get()
@@ -773,8 +811,7 @@ class MapBuilderApp:
                     angle_rad = math.radians(angle_deg)
                     pts.append(sx + size * math.cos(angle_rad))
                     pts.append(sy + size * math.sin(angle_rad))
-                
-                self.canvas.create_polygon(pts, outline="#404040", fill="", tags="grid")
+                self.canvas.create_polygon(pts, outline=self.map_state.grid_color, fill="", tags="grid", outlinestipple="gray50")
 
         # Draw Items with Z-Index (Tiles first, then Tokens)
         # Helper to check if item is token
@@ -889,6 +926,13 @@ class MapBuilderApp:
             # PLACE MODE
             # Parse Size
             size = self.parse_size_from_filename(self.selected_asset_path)
+            
+            if self.app_mode.get() == "WEBER_NHP":
+                user_sz = simpledialog.askfloat("Token Size", f"Enter token size (1 = 1 hex) for:\n{os.path.basename(self.selected_asset_path)}", initialvalue=size, minvalue=0.1)
+                if user_sz is None:
+                    return # User cancelled
+                size = user_sz
+            
             # Lancer Scaling
             scale_map = {0.5: 0.8, 1: 1.0, 2: 2.0, 3: 3.0, 4: 4.0}
             scale = scale_map.get(size, float(size))
@@ -980,7 +1024,7 @@ class MapBuilderApp:
     def export_map(self):
         f = filedialog.asksaveasfilename(
             defaultextension=".png", 
-            filetypes=[("PNG Files", "*.png"), ("JPEG Files", "*.jpg"), ("All Files", "*.*")],
+            filetypes=[("PNG Files", "*.png"), ("JPEG Files", "*.jpg *.jpeg"), ("WebP Files", "*.webp"), ("BMP Files", "*.bmp"), ("All Files", "*.*")],
             title="Export Map as Image"
         )
         if not f: return

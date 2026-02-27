@@ -4,11 +4,12 @@ class MapState:
     def __init__(self):
         self.items = []  # List of dicts: { "type": "token"|"tile", "path": str, "q": int, "r": int, "s": float, "rot": int }
         self.drawings = [] # List of dicts for paint tools
-        self.background_color = "#202020"
+        self.background_color = "#000000"
         self.grid_size = 50
         self.grid_offset_x = 0
         self.grid_offset_y = 0
         self.background_image = None
+        self.grid_color = "#39ff14"
 
     def add_item(self, path, q, r, item_type="token", scale=1.0, rotation=0):
         self.items.append({
@@ -35,10 +36,10 @@ class MapState:
 
     def to_dict(self):
         return {
-            "version": 1,
             "background_image": self.background_image,
             "background_color": self.background_color,
             "grid_size": self.grid_size,
+            "grid_color": self.grid_color,
             "grid_offset_x": self.grid_offset_x,
             "grid_offset_y": self.grid_offset_y,
             "items": self.items,
@@ -53,9 +54,10 @@ class MapState:
         with open(filepath, 'r') as f:
             data = json.load(f)
         
-        self.background_color = data.get("background_color", "#202020")
+        self.background_color = data.get("background_color", "#000000")
         self.background_image = data.get("background_image", None)
         self.grid_size = data.get("grid_size", 50)
+        self.grid_color = data.get("grid_color", "#39ff14")
         self.grid_offset_x = data.get("grid_offset_x", 0)
         self.grid_offset_y = data.get("grid_offset_y", 0)
         self.items = data.get("items", [])

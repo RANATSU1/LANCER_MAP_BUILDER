@@ -76,7 +76,7 @@ def scan_assets():
                 assets[pack_name][category] = []
 
             for file in files:
-                if file.lower().endswith(('.png', '.jpg', '.jpeg')):
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.tiff', '.tif')):
                     full_path = os.path.join(root, file)
                     assets[pack_name][category].append(full_path)
 
