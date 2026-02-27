@@ -29,6 +29,10 @@ class MapBuilderApp:
         self.scale = 1.0
         self.loaded_images = {} # Cache for PIL images
         self._tk_refs = [] # Keep references to PhotoImages
+        
+        self.hovered_item_index = None
+        self.tooltip_x = 0
+        self.tooltip_y = 0
 
         self.paint_mode = tk.BooleanVar(value=False)
         self.paint_color = tk.StringVar(value="white")
@@ -228,6 +232,7 @@ class MapBuilderApp:
         self.canvas.bind("<MouseWheel>", self.on_zoom)
         self.canvas.bind("<Button-4>", self.on_zoom)
         self.canvas.bind("<Button-5>", self.on_zoom)
+        self.canvas.bind("<Motion>", self.on_canvas_motion)
 
         # Initial Draw
         self.root.after(10, self.draw_wrapper)
@@ -903,6 +908,92 @@ class MapBuilderApp:
             draw_item_obj(idx, item)
 
     # --- Interaction ---
+
+    def on_canvas_motion(self, event):
+        if self.paint_mode.get() or getattr(self, "drag_item_index", None) is not None:
+            if self.hovered_item_index is not None:
+                self.hovered_item_index = None
+                self.canvas.delete("tooltip")
+            return
+
+        cx, cy = self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2
+        world_x = (event.x - cx) / self.scale + self.camera_x
+        world_y = (event.y - cy) / self.scale + self.camera_y
+        
+        gx = self.map_state.grid_offset_x
+        gy = self.map_state.grid_offset_y
+        q, r = self.grid.pixel_to_hex(world_x - gx, world_y - gy)
+        
+        found = -1
+        for i in range(len(self.map_state.items) - 1, -1, -1):
+            item = self.map_state.items[i]
+            p = item["path"].lower()
+            is_token = "token" in p or "frame" in p
+            if item["q"] == q and item["r"] == r and is_token:
+                found = i
+                break
+
+        if self.hovered_item_index != found:
+            self.hovered_item_index = found if found != -1 else None
+            self.update_hover_tooltip(event.x, event.y)
+        elif self.hovered_item_index is not None:
+            self.move_hover_tooltip(event.x, event.y)
+
+    def update_hover_tooltip(self, x, y):
+        self.canvas.delete("tooltip")
+        if self.hovered_item_index is not None:
+            idx = self.hovered_item_index
+            item = self.map_state.items[idx]
+            
+            lines = [f"NAME: {self.get_token_name(idx)}"]
+            
+            if item.get("pilot", ""): lines.append(f">PILOT: {item['pilot']}")
+            if item.get("ll", ""): lines.append(f">LL: {item['ll']}")
+                
+            stats = []
+            if "hp" in item or "max_hp" in item:
+                stats.append(f"  >HP: {item.get('hp', '-')}/{item.get('max_hp', '-')}")
+            if "structure" in item:
+                stats.append(f"  >ST: {item.get('structure', '-')}")
+            if "evasion" in item:
+                stats.append(f"  >EV: {item.get('evasion', '-')}")
+            if "speed" in item:
+                stats.append(f"  >SP: {item.get('speed', '-')}")
+                
+            if stats:
+                lines.append(">STATS:")
+                lines.extend(stats)
+                
+            if item.get("talents"):
+                lines.append(">TALENTS:")
+                for talent in item["talents"]:
+                    lines.append(f"  >{talent}")
+                
+            text = "\n".join(lines)
+            
+            # Text first to get bbox
+            tx = self.canvas.create_text(x + 15, y + 15, text=text, anchor="nw", font=("Consolas", 10, "bold"), fill="#39ff14", tags=("tooltip", "tooltip_text"))
+            bbox = self.canvas.bbox(tx)
+            
+            # Background
+            self.canvas.create_rectangle(bbox[0]-5, bbox[1]-5, bbox[2]+5, bbox[3]+5, fill="#000000", outline="#39ff14", width=2, tags=("tooltip", "tooltip_bg"))
+            
+            # Pointer arrow to cursor
+            self.canvas.create_polygon(x, y, bbox[0]-5, bbox[1]+10, bbox[0]+10, bbox[1]-5, fill="#000000", outline="#39ff14", width=1, tags=("tooltip", "tooltip_arrow"))
+            
+            self.canvas.tag_raise("tooltip_bg")
+            self.canvas.tag_raise("tooltip_arrow")
+            self.canvas.tag_raise("tooltip_text")
+            
+            self.tooltip_x = x
+            self.tooltip_y = y
+
+    def move_hover_tooltip(self, x, y):
+        dx = x - self.tooltip_x
+        dy = y - self.tooltip_y
+        self.canvas.move("tooltip", dx, dy)
+        self.tooltip_x = x
+        self.tooltip_y = y
 
     def on_canvas_click(self, event):
         cx, cy = self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2
