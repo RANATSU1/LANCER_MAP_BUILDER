@@ -10,6 +10,8 @@ class MapState:
         self.grid_offset_y = 0
         self.background_image = None
         self.grid_color = "#39ff14"
+        self.ui_bg_color = "#000000"
+        self.ui_fg_color = "#39ff14"
 
     def add_item(self, path, q, r, item_type="token", scale=1.0, rotation=0):
         self.items.append({
@@ -40,6 +42,8 @@ class MapState:
             "background_color": self.background_color,
             "grid_size": self.grid_size,
             "grid_color": self.grid_color,
+            "ui_bg_color": self.ui_bg_color,
+            "ui_fg_color": self.ui_fg_color,
             "grid_offset_x": self.grid_offset_x,
             "grid_offset_y": self.grid_offset_y,
             "items": self.items,
@@ -58,6 +62,8 @@ class MapState:
         self.background_image = data.get("background_image", None)
         self.grid_size = data.get("grid_size", 50)
         self.grid_color = data.get("grid_color", "#39ff14")
+        self.ui_bg_color = data.get("ui_bg_color", "#000000")
+        self.ui_fg_color = data.get("ui_fg_color", "#39ff14")
         self.grid_offset_x = data.get("grid_offset_x", 0)
         self.grid_offset_y = data.get("grid_offset_y", 0)
         self.items = data.get("items", [])

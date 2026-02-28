@@ -53,9 +53,20 @@ class MapBuilderApp:
         style = ttk.Style()
         style.theme_use('clam')
         
-        bg_color = "#000000"
-        fg_color = "#39ff14"
-        sel_bg = "#004400"
+        bg_color = self.map_state.ui_bg_color
+        fg_color = self.map_state.ui_fg_color
+        
+        def darken_color(hex_color, factor=0.5):
+            hex_color = hex_color.lstrip('#')
+            if len(hex_color) == 6:
+                r, g, b = int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16)
+                return f"#{int(r*factor):02x}{int(g*factor):02x}{int(b*factor):02x}"
+            return "#004400"
+            
+        sel_bg = darken_color(fg_color, 0.2)
+        btn_active_bg = darken_color(fg_color, 0.1)
+        btn_bg = darken_color(bg_color, 0.9) if bg_color != "#000000" else "#0a0a0a"
+
         font = ("Consolas", 10, "bold")
         
         self.root.configure(bg=bg_color)
@@ -63,21 +74,42 @@ class MapBuilderApp:
         style.configure(".", background=bg_color, foreground=fg_color, font=font)
         style.configure("TFrame", background=bg_color)
         style.configure("TLabel", background=bg_color, foreground=fg_color)
-        style.configure("TButton", background="#0a0a0a", foreground=fg_color, bordercolor=fg_color, lightcolor=fg_color, darkcolor=fg_color, font=font)
-        style.map("TButton", background=[("active", "#112211")], foreground=[("active", fg_color)])
-        style.configure("TCombobox", fieldbackground=bg_color, background="#0a0a0a", foreground=fg_color, arrowcolor=fg_color)
+        style.configure("TButton", background=btn_bg, foreground=fg_color, bordercolor=fg_color, lightcolor=fg_color, darkcolor=fg_color, font=font)
+        style.map("TButton", background=[("active", btn_active_bg)], foreground=[("active", fg_color)])
+        style.configure("TCombobox", fieldbackground=bg_color, background=btn_bg, foreground=fg_color, arrowcolor=fg_color)
         style.map("TCombobox", fieldbackground=[("readonly", bg_color)], foreground=[("readonly", fg_color)])
         style.configure("TCheckbutton", background=bg_color, foreground=fg_color)
         style.map("TCheckbutton", background=[("active", bg_color)])
         style.configure("Treeview", background=bg_color, fieldbackground=bg_color, foreground=fg_color, font=font, borderwidth=0)
         style.map("Treeview", background=[("selected", sel_bg)], foreground=[("selected", fg_color)])
-        style.configure("Treeview.Heading", background="#0a0a0a", foreground=fg_color, bordercolor=fg_color)
+        style.configure("Treeview.Heading", background=btn_bg, foreground=fg_color, bordercolor=fg_color)
         style.configure("TLabelframe", background=bg_color, foreground=fg_color, bordercolor=fg_color)
         style.configure("TLabelframe.Label", background=bg_color, foreground=fg_color)
         style.configure("TEntry", fieldbackground=bg_color, foreground=fg_color, insertcolor=fg_color, bordercolor=fg_color)
         style.configure("TSeparator", background=fg_color)
         style.configure("TPanedwindow", background=bg_color)
-        style.configure("Vertical.TScrollbar", background="#0a0a0a", troughcolor=bg_color, arrowcolor=fg_color, bordercolor=fg_color)
+        style.configure("Vertical.TScrollbar", background=btn_bg, troughcolor=bg_color, arrowcolor=fg_color, bordercolor=fg_color)
+
+        if hasattr(self, 'preview_label'):
+            self.preview_label.config(background=bg_color, foreground=fg_color)
+        if hasattr(self, 'attachment_preview_lbl'):
+            self.attachment_preview_lbl.config(background=bg_color)
+        if hasattr(self, 'attachment_text_preview'):
+            self.attachment_text_preview.config(bg=bg_color, fg=fg_color, insertbackground=fg_color, highlightbackground=fg_color)
+        if hasattr(self, 'canvas'):
+            self.canvas.config(bg=bg_color, highlightbackground=fg_color, highlightcolor=fg_color)
+        if hasattr(self, 'term_text'):
+            self.term_text.config(bg=bg_color, fg=fg_color, insertbackground=fg_color, highlightbackground=fg_color)
+
+    def open_ui_settings(self):
+        bg = colorchooser.askcolor(title="Background Color", initialcolor=self.map_state.ui_bg_color)
+        if bg[1]:
+            self.map_state.ui_bg_color = bg[1]
+        fg = colorchooser.askcolor(title="Foreground/Accent Color", initialcolor=self.map_state.ui_fg_color)
+        if fg[1]:
+            self.map_state.ui_fg_color = fg[1]
+            
+        self.apply_theme()
 
     def setup_ui(self):
         # Main Layout: Sidebar (Left) | Canvas (Center) | Toolbar (Top)
@@ -105,6 +137,8 @@ class MapBuilderApp:
         self.btn_load_bg = ttk.Button(self.toolbar, text="Load Map PNG", command=self.load_background_image)
         if self.app_mode.get() == "WEBER_NHP":
             self.btn_load_bg.pack(side="left", padx=5, pady=5)
+            
+        ttk.Button(self.toolbar, text="UI Colors", command=self.open_ui_settings).pack(side="right", padx=5, pady=5)
         
         # Paned Window
         self.paned = ttk.PanedWindow(self.root, orient="horizontal")
@@ -1041,14 +1075,14 @@ class MapBuilderApp:
             text = "\n".join(lines)
             
             # Text first to get bbox
-            tx = self.canvas.create_text(x + 15, y + 15, text=text, anchor="nw", font=("Consolas", 10, "bold"), fill="#39ff14", tags=("tooltip", "tooltip_text"))
+            tx = self.canvas.create_text(x + 15, y + 15, text=text, anchor="nw", font=("Consolas", 10, "bold"), fill=self.map_state.ui_fg_color, tags=("tooltip", "tooltip_text"))
             bbox = self.canvas.bbox(tx)
             
             # Background
-            self.canvas.create_rectangle(bbox[0]-5, bbox[1]-5, bbox[2]+5, bbox[3]+5, fill="#000000", outline="#39ff14", width=2, tags=("tooltip", "tooltip_bg"))
+            self.canvas.create_rectangle(bbox[0]-5, bbox[1]-5, bbox[2]+5, bbox[3]+5, fill=self.map_state.ui_bg_color, outline=self.map_state.ui_fg_color, width=2, tags=("tooltip", "tooltip_bg"))
             
             # Pointer arrow to cursor
-            self.canvas.create_polygon(x, y, bbox[0]-5, bbox[1]+10, bbox[0]+10, bbox[1]-5, fill="#000000", outline="#39ff14", width=1, tags=("tooltip", "tooltip_arrow"))
+            self.canvas.create_polygon(x, y, bbox[0]-5, bbox[1]+10, bbox[0]+10, bbox[1]-5, fill=self.map_state.ui_bg_color, outline=self.map_state.ui_fg_color, width=1, tags=("tooltip", "tooltip_arrow"))
             
             self.canvas.tag_raise("tooltip_bg")
             self.canvas.tag_raise("tooltip_arrow")
