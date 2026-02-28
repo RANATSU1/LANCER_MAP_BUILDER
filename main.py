@@ -3,6 +3,7 @@ from tkinter import ttk, filedialog, messagebox, colorchooser, simpledialog
 from PIL import Image, ImageTk, ImageDraw
 import os
 import math
+import json
 
 from assets import scan_assets, ASSET_ROOT
 from grid import HexGrid
@@ -15,6 +16,9 @@ class MapBuilderApp:
         self.root.geometry("1200x800")
 
         self.map_state = MapState()
+        self.settings_file = os.path.expanduser("~/.lancer_map_builder_settings.json")
+        self.load_global_settings()
+
         self.grid = HexGrid(size=50, flat_top=False)
         self.assets = scan_assets(self.map_state.tokens_directory)
         
@@ -46,6 +50,34 @@ class MapBuilderApp:
 
         self.apply_theme()
         self.setup_ui()
+
+    def show_marker_menu(self, event=None):
+        pass # Placeholder implemented to avoid errors when tracking marker bindings
+
+    def load_global_settings(self):
+        if os.path.exists(self.settings_file):
+            try:
+                with open(self.settings_file, "r") as f:
+                    data = json.load(f)
+                if "ui_bg_color" in data: self.map_state.ui_bg_color = data["ui_bg_color"]
+                if "ui_fg_color" in data: self.map_state.ui_fg_color = data["ui_fg_color"]
+                if "tokens_directory" in data: self.map_state.tokens_directory = data["tokens_directory"]
+                if "markers_directory" in data: self.map_state.markers_directory = data["markers_directory"]
+            except Exception as e:
+                print(f"Error loading global settings: {e}")
+
+    def save_global_settings(self):
+        try:
+            data = {
+                "ui_bg_color": self.map_state.ui_bg_color,
+                "ui_fg_color": self.map_state.ui_fg_color,
+                "tokens_directory": self.map_state.tokens_directory,
+                "markers_directory": self.map_state.markers_directory
+            }
+            with open(self.settings_file, "w") as f:
+                json.dump(data, f, indent=2)
+        except Exception as e:
+            print(f"Error saving global settings: {e}")
 
     def apply_theme(self):
         style = ttk.Style()
@@ -106,11 +138,19 @@ class MapBuilderApp:
             self.map_state.tokens_directory = dir_path
             self.assets = scan_assets(dir_path)
             self.populate_tree()
+            self.save_global_settings()
+
+    def change_markers_directory(self, top):
+        top.destroy()
+        dir_path = filedialog.askdirectory(title="Select Markers Directory", initialdir=self.map_state.markers_directory)
+        if dir_path:
+            self.map_state.markers_directory = dir_path
+            self.save_global_settings()
 
     def open_settings_overlay(self):
         top = tk.Toplevel(self.root)
         top.title("Settings")
-        top.geometry("250x150")
+        top.geometry("250x180")
         top.configure(bg=self.map_state.ui_bg_color)
         top.transient(self.root)
         top.grab_set()
@@ -122,6 +162,7 @@ class MapBuilderApp:
         
         ttk.Label(top, text="Map Builder Settings", anchor="center").pack(fill="x", pady=10)
         ttk.Button(top, text="Tokens Directory", command=lambda: self.change_tokens_directory(top)).pack(fill="x", padx=20, pady=5)
+        ttk.Button(top, text="Markers Directory", command=lambda: self.change_markers_directory(top)).pack(fill="x", padx=20, pady=5)
         ttk.Button(top, text="UI Colors", command=lambda: self.open_ui_settings(top)).pack(fill="x", padx=20, pady=5)
 
     def open_ui_settings(self, top=None):
@@ -135,6 +176,7 @@ class MapBuilderApp:
             self.map_state.ui_fg_color = fg[1]
             
         self.apply_theme()
+        self.save_global_settings()
 
     def setup_ui(self):
         # Main Layout: Sidebar (Left) | Canvas (Center) | Toolbar (Top)

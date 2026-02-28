@@ -13,6 +13,7 @@ class MapState:
         self.ui_bg_color = "#000000"
         self.ui_fg_color = "#39ff14"
         self.tokens_directory = None
+        self.markers_directory = None
 
     def add_item(self, path, q, r, item_type="token", scale=1.0, rotation=0):
         self.items.append({
@@ -46,6 +47,7 @@ class MapState:
             "ui_bg_color": self.ui_bg_color,
             "ui_fg_color": self.ui_fg_color,
             "tokens_directory": self.tokens_directory,
+            "markers_directory": self.markers_directory,
             "grid_offset_x": self.grid_offset_x,
             "grid_offset_y": self.grid_offset_y,
             "items": self.items,
@@ -67,6 +69,7 @@ class MapState:
         self.ui_bg_color = data.get("ui_bg_color", "#000000")
         self.ui_fg_color = data.get("ui_fg_color", "#39ff14")
         self.tokens_directory = data.get("tokens_directory", None)
+        self.markers_directory = data.get("markers_directory", None)
         self.grid_offset_x = data.get("grid_offset_x", 0)
         self.grid_offset_y = data.get("grid_offset_y", 0)
         self.items = data.get("items", [])
