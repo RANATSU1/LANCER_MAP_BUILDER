@@ -4,7 +4,7 @@ from PIL import Image, ImageTk, ImageDraw
 import os
 import math
 
-from assets import scan_assets
+from assets import scan_assets, ASSET_ROOT
 from grid import HexGrid
 from map_state import MapState
 
@@ -43,6 +43,8 @@ class MapBuilderApp:
         self.root.bind("<Delete>", self.delete_selected_item)
         self.root.bind("<BackSpace>", self.delete_selected_item)
         self.root.bind("<Escape>", self.deselect_all)
+        self.root.bind("<m>", self.show_marker_menu)
+        self.root.bind("<M>", self.show_marker_menu)
 
         self.apply_theme()
         self.setup_ui()
@@ -344,6 +346,52 @@ class MapBuilderApp:
                 self.selected_item_index = None
                 self.update_attachment_ui()
                 self.draw_wrapper()
+
+    def show_marker_menu(self, event=None):
+        # Prevent marker trigger when typing
+        if event is not None and getattr(event.widget, "winfo_class", lambda: "")() in ("Entry", "TEntry", "Text", "TCombobox"):
+            return
+            
+        if self.selected_item_index is None:
+            return
+            
+        marker_dir = os.path.join(os.path.dirname(ASSET_ROOT), "MARKERS")
+        if not os.path.exists(marker_dir):
+            messagebox.showwarning("Warning", f"Marker folder not found at {marker_dir}")
+            return
+            
+        menu = tk.Menu(self.root, tearoff=0)
+        
+        valid_exts = ('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp')
+        markers = [f for f in os.listdir(marker_dir) if f.lower().endswith(valid_exts)]
+        markers.sort()
+        
+        item = self.map_state.items[self.selected_item_index]
+        current_markers = item.get("markers", [])
+        
+        for m in markers:
+            m_path = os.path.join(marker_dir, m)
+            label = os.path.splitext(m)[0]
+            if m_path in current_markers:
+                menu.add_command(label="✓ " + label, command=lambda p=m_path: self.toggle_marker(p))
+            else:
+                menu.add_command(label="  " + label, command=lambda p=m_path: self.toggle_marker(p))
+                
+        x, y = self.root.winfo_pointerxy()
+        menu.tk_popup(x, y)
+
+    def toggle_marker(self, marker_path):
+        if self.selected_item_index is None: return
+        item = self.map_state.items[self.selected_item_index]
+        if "markers" not in item:
+            item["markers"] = []
+            
+        if marker_path in item["markers"]:
+            item["markers"].remove(marker_path)
+        else:
+            item["markers"].append(marker_path)
+            
+        self.draw_wrapper()
 
     # --- Attachment Logic ---
     def update_attachment_ui(self):
@@ -887,6 +935,27 @@ class MapBuilderApp:
                             sx + display_w/2, sy + display_h/2, 
                             outline="cyan", width=3
                         )
+                        
+                    # Render Markers
+                    markers = item.get("markers", [])
+                    if markers:
+                        marker_size = max(16, int(display_w * 0.35))
+                        total_w = (len(markers) - 1) * marker_size * 1.1
+                        start_x = sx - total_w / 2
+                        m_y = sy + display_h / 2
+                        
+                        for i, m_path in enumerate(markers):
+                            m_img = self.get_image(m_path)
+                            if m_img:
+                                m_x = start_x + i * marker_size * 1.1
+                                try:
+                                    m_resized = m_img.resize((marker_size, marker_size), Image.Resampling.LANCZOS)
+                                    tk_m_img = ImageTk.PhotoImage(m_resized)
+                                    self._tk_refs.append(tk_m_img)
+                                    self.canvas.create_image(m_x, m_y, image=tk_m_img, anchor="center")
+                                except Exception as e:
+                                    print(f"Error drawing marker: {e}")
+                                    
                 except Exception as e:
                     print(f"Error resizing: {e}")
 
