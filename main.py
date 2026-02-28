@@ -63,6 +63,7 @@ class MapBuilderApp:
                 if "ui_fg_color" in data: self.map_state.ui_fg_color = data["ui_fg_color"]
                 if "tokens_directory" in data: self.map_state.tokens_directory = data["tokens_directory"]
                 if "markers_directory" in data: self.map_state.markers_directory = data["markers_directory"]
+                if "maps_directory" in data: self.map_state.maps_directory = data["maps_directory"]
             except Exception as e:
                 print(f"Error loading global settings: {e}")
 
@@ -72,7 +73,8 @@ class MapBuilderApp:
                 "ui_bg_color": self.map_state.ui_bg_color,
                 "ui_fg_color": self.map_state.ui_fg_color,
                 "tokens_directory": self.map_state.tokens_directory,
-                "markers_directory": self.map_state.markers_directory
+                "markers_directory": self.map_state.markers_directory,
+                "maps_directory": self.map_state.maps_directory
             }
             with open(self.settings_file, "w") as f:
                 json.dump(data, f, indent=2)
@@ -147,10 +149,17 @@ class MapBuilderApp:
             self.map_state.markers_directory = dir_path
             self.save_global_settings()
 
+    def change_maps_directory(self, top):
+        top.destroy()
+        dir_path = filedialog.askdirectory(title="Select Maps Directory", initialdir=self.map_state.maps_directory)
+        if dir_path:
+            self.map_state.maps_directory = dir_path
+            self.save_global_settings()
+
     def open_settings_overlay(self):
         top = tk.Toplevel(self.root)
         top.title("Settings")
-        top.geometry("250x180")
+        top.geometry("250x210")
         top.configure(bg=self.map_state.ui_bg_color)
         top.transient(self.root)
         top.grab_set()
@@ -163,6 +172,7 @@ class MapBuilderApp:
         ttk.Label(top, text="Map Builder Settings", anchor="center").pack(fill="x", pady=10)
         ttk.Button(top, text="Tokens Directory", command=lambda: self.change_tokens_directory(top)).pack(fill="x", padx=20, pady=5)
         ttk.Button(top, text="Markers Directory", command=lambda: self.change_markers_directory(top)).pack(fill="x", padx=20, pady=5)
+        ttk.Button(top, text="Maps Directory", command=lambda: self.change_maps_directory(top)).pack(fill="x", padx=20, pady=5)
         ttk.Button(top, text="UI Colors", command=lambda: self.open_ui_settings(top)).pack(fill="x", padx=20, pady=5)
 
     def open_ui_settings(self, top=None):
@@ -1277,7 +1287,7 @@ class MapBuilderApp:
 
     # --- File Ops ---
     def save_map(self):
-        f = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Map", "*.json")])
+        f = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON Map", "*.json")], initialdir=self.map_state.maps_directory)
         if f:
             self.map_state.save_to_file(f)
             messagebox.showinfo("Saved", "Map saved successfully!")
@@ -1342,7 +1352,7 @@ class MapBuilderApp:
                 self.map_state.background_image = known_images[bname]
 
     def load_by_file(self):
-        f = filedialog.askopenfilename(filetypes=[("JSON Map", "*.json")])
+        f = filedialog.askopenfilename(filetypes=[("JSON Map", "*.json")], initialdir=self.map_state.maps_directory)
         if f:
             self.map_state.load_from_file(f)
             self.save_global_settings() # Auto-update UI settings from loaded map
