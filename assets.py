@@ -29,7 +29,7 @@ def get_asset_root():
 
 ASSET_ROOT = get_asset_root()
 
-def scan_assets():
+def scan_assets(directory=None):
     """
     Scans the MAPS directory for assets.
     Returns a dictionary of structure:
@@ -44,15 +44,17 @@ def scan_assets():
     """
     assets = {}
 
-    if not os.path.exists(ASSET_ROOT):
-        print(f"Warning: Asset root not found at {ASSET_ROOT}")
+    target_dir = directory if directory else ASSET_ROOT
+
+    if not os.path.exists(target_dir):
+        print(f"Warning: Asset root not found at {target_dir}")
         return assets
 
-    print(f"Scanning assets in: {ASSET_ROOT}")
+    print(f"Scanning assets in: {target_dir}")
 
     # Top level directories are usually "Packs"
-    for pack_name in os.listdir(ASSET_ROOT):
-        pack_path = os.path.join(ASSET_ROOT, pack_name)
+    for pack_name in os.listdir(target_dir):
+        pack_path = os.path.join(target_dir, pack_name)
         if not os.path.isdir(pack_path):
             continue
         

@@ -14,11 +14,9 @@ class MapBuilderApp:
         self.root.title("Lancer Map Builder")
         self.root.geometry("1200x800")
 
-        # Initialize Logic
-        # Grid initialized from state
         self.map_state = MapState()
         self.grid = HexGrid(size=50, flat_top=False)
-        self.assets = scan_assets()
+        self.assets = scan_assets(self.map_state.tokens_directory)
         
         # State for interactions
         self.selected_asset_path = None
@@ -101,7 +99,34 @@ class MapBuilderApp:
         if hasattr(self, 'term_text'):
             self.term_text.config(bg=bg_color, fg=fg_color, insertbackground=fg_color, highlightbackground=fg_color)
 
-    def open_ui_settings(self):
+    def change_tokens_directory(self, top):
+        top.destroy()
+        dir_path = filedialog.askdirectory(title="Select Tokens Directory", initialdir=self.map_state.tokens_directory)
+        if dir_path:
+            self.map_state.tokens_directory = dir_path
+            self.assets = scan_assets(dir_path)
+            self.populate_tree()
+
+    def open_settings_overlay(self):
+        top = tk.Toplevel(self.root)
+        top.title("Settings")
+        top.geometry("250x150")
+        top.configure(bg=self.map_state.ui_bg_color)
+        top.transient(self.root)
+        top.grab_set()
+        
+        # Center the dialog
+        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 125
+        y = self.root.winfo_y() + (self.root.winfo_height() // 2) - 75
+        top.geometry(f"+{x}+{y}")
+        
+        ttk.Label(top, text="Map Builder Settings", anchor="center").pack(fill="x", pady=10)
+        ttk.Button(top, text="Tokens Directory", command=lambda: self.change_tokens_directory(top)).pack(fill="x", padx=20, pady=5)
+        ttk.Button(top, text="UI Colors", command=lambda: self.open_ui_settings(top)).pack(fill="x", padx=20, pady=5)
+
+    def open_ui_settings(self, top=None):
+        if top:
+            top.destroy()
         bg = colorchooser.askcolor(title="Background Color", initialcolor=self.map_state.ui_bg_color)
         if bg[1]:
             self.map_state.ui_bg_color = bg[1]
@@ -138,7 +163,7 @@ class MapBuilderApp:
         if self.app_mode.get() == "WEBER_NHP":
             self.btn_load_bg.pack(side="left", padx=5, pady=5)
             
-        ttk.Button(self.toolbar, text="UI Colors", command=self.open_ui_settings).pack(side="right", padx=5, pady=5)
+        ttk.Button(self.toolbar, text="Settings", command=self.open_settings_overlay).pack(side="right", padx=5, pady=5)
         
         # Paned Window
         self.paned = ttk.PanedWindow(self.root, orient="horizontal")
@@ -1241,6 +1266,9 @@ class MapBuilderApp:
         f = filedialog.askopenfilename(filetypes=[("JSON Map", "*.json")])
         if f:
             self.map_state.load_from_file(f)
+            self.assets = scan_assets(self.map_state.tokens_directory)
+            self.populate_tree()
+            self.apply_theme()
             # Update grid controls
             self.grid_size_var.set(self.map_state.grid_size)
             self.offset_x_var.set(self.map_state.grid_offset_x)
