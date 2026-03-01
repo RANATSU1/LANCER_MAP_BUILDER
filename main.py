@@ -17,6 +17,7 @@ class MapBuilderApp:
 
         self.map_state = MapState()
         self.settings_file = os.path.expanduser("~/.lancer_map_builder_settings.json")
+        self.app_mode = tk.StringVar(value="WEBER_NHP")
         self.load_global_settings()
 
         self.grid = HexGrid(size=50, flat_top=False)
@@ -39,7 +40,6 @@ class MapBuilderApp:
         self.paint_mode = tk.BooleanVar(value=False)
         self.paint_color = tk.StringVar(value="white")
         self.current_drawing = None
-        self.app_mode = tk.StringVar(value="GUSTAV_NHP")
         
         # Bind delete keys
         self.root.bind("<Delete>", self.delete_selected_item)
@@ -60,6 +60,7 @@ class MapBuilderApp:
                 if "ui_fg_color" in data: self.map_state.ui_fg_color = data["ui_fg_color"]
                 if "tokens_directory" in data: self.map_state.tokens_directory = data["tokens_directory"]
                 if "markers_directory" in data: self.map_state.markers_directory = data["markers_directory"]
+                if "app_mode" in data: self.app_mode.set(data["app_mode"])
             except Exception as e:
                 print(f"Error loading global settings: {e}")
 
@@ -69,7 +70,8 @@ class MapBuilderApp:
                 "ui_bg_color": self.map_state.ui_bg_color,
                 "ui_fg_color": self.map_state.ui_fg_color,
                 "tokens_directory": self.map_state.tokens_directory,
-                "markers_directory": self.map_state.markers_directory
+                "markers_directory": self.map_state.markers_directory,
+                "app_mode": self.app_mode.get()
             }
             with open(self.settings_file, "w") as f:
                 json.dump(data, f, indent=2)
@@ -147,7 +149,7 @@ class MapBuilderApp:
     def open_settings_overlay(self):
         top = tk.Toplevel(self.root)
         top.title("Settings")
-        top.geometry("250x180")
+        top.geometry("250x230")
         top.configure(bg=self.map_state.ui_bg_color)
         top.transient(self.root)
         top.grab_set()
@@ -158,6 +160,14 @@ class MapBuilderApp:
         top.geometry(f"+{x}+{y}")
         
         ttk.Label(top, text="Map Builder Settings", anchor="center").pack(fill="x", pady=10)
+        
+        mode_frame = ttk.Frame(top)
+        mode_frame.pack(fill="x", padx=20, pady=5)
+        ttk.Label(mode_frame, text="Mode:").pack(side="left")
+        cb = ttk.Combobox(mode_frame, textvariable=self.app_mode, values=["GUSTAV_NHP", "WEBER_NHP"], state="readonly", width=12)
+        cb.pack(side="right", fill="x", expand=True)
+        cb.bind("<<ComboboxSelected>>", lambda e: self.save_global_settings())
+
         ttk.Button(top, text="Tokens Directory", command=lambda: self.change_tokens_directory(top)).pack(fill="x", padx=20, pady=5)
         ttk.Button(top, text="Markers Directory", command=lambda: self.change_markers_directory(top)).pack(fill="x", padx=20, pady=5)
         ttk.Button(top, text="UI Colors", command=lambda: self.open_ui_settings(top)).pack(fill="x", padx=20, pady=5)
@@ -176,86 +186,126 @@ class MapBuilderApp:
         self.save_global_settings()
 
     def setup_ui(self):
-        # Main Layout: Sidebar (Left) | Canvas (Center) | Toolbar (Top)
+        # The main container is now just a Frame or the root.
+        # But we need Canvas at the bottom, taking full space.
+        self.canvas = tk.Canvas(self.root, bg="#000000", highlightthickness=1, highlightbackground=self.map_state.ui_fg_color, highlightcolor=self.map_state.ui_fg_color)
+        self.canvas.pack(fill="both", expand=True)
+
+        # Bindings
+        self.canvas.bind("<ButtonPress-1>", self.on_canvas_click)
+        self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
+        self.canvas.bind("<ButtonPress-3>", self.on_canvas_right_click) # Panning
+        self.canvas.bind("<B3-Motion>", self.on_canvas_pan)
+        # Mouse wheel bindings (Windows/Linux/Mac support)
+        self.canvas.bind("<MouseWheel>", self.on_zoom)
+        self.canvas.bind("<Button-4>", self.on_zoom)
+        self.canvas.bind("<Button-5>", self.on_zoom)
+        self.canvas.bind("<Motion>", self.on_canvas_motion)
+
+        # --- OVERLAYS ---
+        bg = self.map_state.ui_bg_color
+        fg = self.map_state.ui_fg_color
         
-        # Toolbar
-        self.toolbar = ttk.Frame(self.root, height=30)
-        self.toolbar.pack(side="top", fill="x")
+        # Top Left Buttons
+        self.top_left = tk.Frame(self.root, bg=bg, highlightbackground=fg, highlightthickness=1)
+        self.top_left.place(x=10, y=10)
+        ttk.Button(self.top_left, text="> SAVE", command=self.save_map).pack(side="left", padx=2, pady=2)
+        ttk.Button(self.top_left, text="> LOAD", command=self.load_by_file).pack(side="left", padx=2, pady=2)
+        ttk.Button(self.top_left, text="> CLEAR", command=self.clear_map).pack(side="left", padx=2, pady=2)
+        ttk.Button(self.top_left, text="> EXPORT", command=self.export_map).pack(side="left", padx=2, pady=2)
         
-        ttk.Button(self.toolbar, text="Save Map", command=self.save_map).pack(side="left", padx=5, pady=5)
-        ttk.Button(self.toolbar, text="Load Map", command=self.load_by_file).pack(side="left", padx=5, pady=5)
-        ttk.Button(self.toolbar, text="Clear Map", command=self.clear_map).pack(side="left", padx=5, pady=5)
-        ttk.Button(self.toolbar, text="Export Map", command=self.export_map).pack(side="left", padx=5, pady=5)
-        ttk.Separator(self.toolbar, orient="vertical").pack(side="left", padx=5, fill="y")
-        ttk.Button(self.toolbar, text="Select/Move Mode (ESC)", command=self.deselect_all).pack(side="left", padx=5, pady=5)
+        # Top Right Buttons
+        self.top_right = tk.Frame(self.root, bg=bg, highlightbackground=fg, highlightthickness=1)
+        self.top_right.place(relx=1.0, x=-10, y=10, anchor="ne")
+        ttk.Button(self.top_right, text="⚔", width=3, command=self.toggle_combat).pack(side="left", padx=2, pady=2)
+        ttk.Button(self.top_right, text="⏱", width=3, command=self.toggle_turn).pack(side="left", padx=2, pady=2)
+        ttk.Button(self.top_right, text="⚙", width=3, command=self.open_settings_overlay).pack(side="left", padx=2, pady=2)
+
+        # Left Vertical Tools Bar
+        self.tools_bar = tk.Frame(self.root, bg=bg, highlightbackground=fg, highlightthickness=1)
+        self.tools_bar.place(x=10, y=50, width=50)
         
-        ttk.Separator(self.toolbar, orient="vertical").pack(side="left", padx=5, fill="y")
-        ttk.Checkbutton(self.toolbar, text="Paint Mode", variable=self.paint_mode, style="Toolbutton").pack(side="left", padx=2, pady=5)
-        ttk.Combobox(self.toolbar, textvariable=self.paint_color, values=["white", "red", "blue", "green", "yellow", "black"], state="readonly", width=8).pack(side="left", padx=2, pady=5)
-        ttk.Button(self.toolbar, text="Clear Paint", command=self.clear_paint).pack(side="left", padx=2, pady=5)
+        ttk.Label(self.tools_bar, text="TOOLS").pack(pady=5)
+        ttk.Separator(self.tools_bar, orient="horizontal").pack(fill="x", padx=2, pady=2)
         
-        ttk.Separator(self.toolbar, orient="vertical").pack(side="left", padx=5, fill="y")
-        self.mode_cb = ttk.Combobox(self.toolbar, textvariable=self.app_mode, values=["GUSTAV_NHP", "WEBER_NHP"], state="readonly", width=12)
-        self.mode_cb.pack(side="left", padx=5, pady=5)
+        self.btn_tools_assets = tk.Button(self.tools_bar, text="🗄", bg=bg, fg=fg, bd=1, relief="solid", command=self.toggle_assets, font=("Consolas", 16), height=1)
+        self.btn_tools_assets.pack(fill="x", padx=2, pady=5)
         
-        self.btn_load_bg = ttk.Button(self.toolbar, text="Load Map PNG", command=self.load_background_image)
+        self.btn_tools_paint = tk.Button(self.tools_bar, text="🎨", bg=bg, fg=fg, bd=1, relief="solid", command=self.toggle_paint, font=("Consolas", 16), height=1)
+        self.btn_tools_paint.pack(fill="x", padx=2, pady=5)
+
+        self.btn_tools_preview = tk.Button(self.tools_bar, text="👁", bg=bg, fg=fg, bd=1, relief="solid", command=self.toggle_preview, font=("Consolas", 16), height=1)
+        self.btn_tools_preview.pack(fill="x", padx=2, pady=5)
+
+        self.btn_tools_grid = tk.Button(self.tools_bar, text="▦", bg=bg, fg=fg, bd=1, relief="solid", command=self.toggle_grid, font=("Consolas", 16), height=1)
+        self.btn_tools_grid.pack(fill="x", padx=2, pady=5)
+
+        # 4 Left Overlays
+        self.overlay_assets = tk.Frame(self.root, bg=bg, highlightbackground=fg, highlightthickness=1)
+        self.assets_visible = False
+        
+        self.overlay_paint = tk.Frame(self.root, bg=bg, highlightbackground=fg, highlightthickness=1)
+        self.paint_visible = False
+        
+        self.overlay_preview = tk.Frame(self.root, bg=bg, highlightbackground=fg, highlightthickness=1)
+        self.preview_visible = False
+        
+        self.overlay_grid = tk.Frame(self.root, bg=bg, highlightbackground=fg, highlightthickness=1)
+        self.grid_visible = False
+        
+        # 1. Assets Content
+        content_assets = ttk.Frame(self.overlay_assets)
+        content_assets.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        self.load_bg_frame = ttk.Frame(content_assets)
+        self.load_bg_frame.pack(fill="x")
+        self.btn_load_bg = ttk.Button(self.load_bg_frame, text="Load Map PNG", command=self.load_background_image)
         if self.app_mode.get() == "WEBER_NHP":
-            self.btn_load_bg.pack(side="left", padx=5, pady=5)
-            
-        ttk.Button(self.toolbar, text="Settings", command=self.open_settings_overlay).pack(side="right", padx=5, pady=5)
-        
-        # Paned Window
-        self.paned = ttk.PanedWindow(self.root, orient="horizontal")
-        self.paned.pack(fill="both", expand=True)
-        
-        # Sidebar
-        self.sidebar = ttk.Frame(self.paned, width=300)
-        self.paned.add(self.sidebar, weight=1)
-        
-        # Asset Treeview
-        ttk.Label(self.sidebar, text="Assets").pack(anchor="w", padx=5, pady=5)
-        
-        # Scrollbar for treeview
-        self.tree_frame = ttk.Frame(self.sidebar)
+            self.btn_load_bg.pack(fill="x", padx=5, pady=5)
+
+        ttk.Label(content_assets, text="Assets").pack(anchor="w", padx=5, pady=5)
+        self.tree_frame = ttk.Frame(content_assets)
         self.tree_frame.pack(fill="both", expand=True)
-        
         self.tree_scroll = ttk.Scrollbar(self.tree_frame)
         self.tree_scroll.pack(side="right", fill="y")
-        
         self.tree = ttk.Treeview(self.tree_frame, yscrollcommand=self.tree_scroll.set, height=10)
         self.tree.pack(fill="both", expand=True)
         self.tree_scroll.config(command=self.tree.yview)
-        
         self.populate_tree()
         self.tree.bind("<<TreeviewSelect>>", self.on_asset_select)
-
-        # Asset Preview
-        ttk.Label(self.sidebar, text="Preview").pack(anchor="w", padx=5, pady=5)
-        self.preview_label = ttk.Label(self.sidebar, text="No Selection", anchor="center", background="#000000", foreground="#39ff14")
-        self.preview_label.pack(fill="x", padx=5, pady=5, ipady=20)
-
-        # Attachment Panel
-        self.attachment_frame = ttk.LabelFrame(self.sidebar, text="Attachment")
-        self.attachment_frame.pack(fill="x", padx=5, pady=10)
         
+        ttk.Label(content_assets, text="Preview").pack(anchor="w", padx=5, pady=5)
+        self.preview_label = ttk.Label(content_assets, text="No Selection", anchor="center", background="#000000", foreground="#39ff14")
+        self.preview_label.pack(fill="x", padx=5, pady=5, ipady=40)
+
+        # 2. Paint Content
+        content_paint = ttk.Frame(self.overlay_paint)
+        content_paint.pack(fill="both", expand=True, padx=5, pady=5)
+        toolbar_f = ttk.LabelFrame(content_paint, text="Map Tools")
+        toolbar_f.pack(fill="x", padx=2, pady=5)
+        ttk.Button(toolbar_f, text="Select/Move Mode (ESC)", command=self.deselect_all).pack(fill="x", padx=2, pady=2)
+        ttk.Checkbutton(toolbar_f, text="Paint Mode", variable=self.paint_mode, style="Toolbutton").pack(fill="x", padx=2, pady=2)
+        ttk.Combobox(toolbar_f, textvariable=self.paint_color, values=["white", "red", "blue", "green", "yellow", "black", "eraser"], state="readonly").pack(fill="x", padx=2, pady=2)
+        ttk.Button(toolbar_f, text="Eraser", command=lambda: self.paint_color.set("eraser")).pack(fill="x", padx=2, pady=2)
+
+        # 3. Preview Content
+        content_preview = ttk.Frame(self.overlay_preview)
+        content_preview.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        self.attachment_frame = ttk.LabelFrame(content_preview, text="Attachment")
+        self.attachment_frame.pack(fill="x", padx=5, pady=10)
         self.btn_attach = ttk.Button(self.attachment_frame, text="Attach File", command=self.attach_file, state="disabled")
         self.btn_attach.pack(fill="x", padx=5, pady=2)
-        
         self.btn_open = ttk.Button(self.attachment_frame, text="Open External", command=self.open_linked_file, state="disabled")
         self.btn_open.pack(fill="x", padx=5, pady=2)
-        
         self.lbl_attachment_status = ttk.Label(self.attachment_frame, text="No Selection", wraplength=280)
         self.lbl_attachment_status.pack(fill="x", padx=5, pady=5)
         
-        # Attachment Preview (Image or Text)
         self.attachment_preview_lbl = ttk.Label(self.attachment_frame, background="#000000", anchor="center")
-        # self.attachment_preview_lbl.pack(fill="both", padx=5, pady=5, expand=True) # Packed dynamically
         self.attachment_text_preview = tk.Text(self.attachment_frame, height=6, width=30, bg="#000000", fg="#39ff14", font=("Consolas", 10, "bold"), insertbackground="#39ff14", relief="solid", highlightthickness=1, highlightbackground="#39ff14", state="disabled")
-        # Don't pack text initially
 
-        # Stats Panel
-        self.stats_frame = ttk.LabelFrame(self.sidebar, text="Mech Details")
-        
+        self.stats_frame = ttk.LabelFrame(content_preview, text="Mech Details")
         name_frame = ttk.Frame(self.stats_frame)
         name_frame.pack(fill="x", padx=5, pady=2)
         ttk.Label(name_frame, text="Name:").pack(side="left")
@@ -274,17 +324,24 @@ class MapBuilderApp:
         
         self.lbl_hp = ttk.Label(self.stats_frame, text="HP: - / -")
         self.lbl_hp.pack(anchor="w", padx=5, pady=2)
-        
         self.lbl_struct = ttk.Label(self.stats_frame, text="Structure: -")
         self.lbl_struct.pack(anchor="w", padx=5, pady=2)
-
         self.lbl_speed = ttk.Label(self.stats_frame, text="Speed: -")
         self.lbl_speed.pack(anchor="w", padx=5, pady=2)
+        self.lbl_evasion = ttk.Label(self.stats_frame, text="Evasion: -")
+        self.lbl_evasion.pack(anchor="w", padx=5, pady=2)
+        self.lbl_edefense = ttk.Label(self.stats_frame, text="E-Def: -")
+        self.lbl_edefense.pack(anchor="w", padx=5, pady=2)
+        self.lbl_repair = ttk.Label(self.stats_frame, text="Repairs: -")
+        self.lbl_repair.pack(anchor="w", padx=5, pady=2)
+        self.lbl_heat = ttk.Label(self.stats_frame, text="Heat Cap: -")
+        self.lbl_heat.pack(anchor="w", padx=5, pady=2)
 
-        # Grid Controls
-        self.grid_controls = ttk.LabelFrame(self.sidebar, text="Grid Settings")
+        # 4. Grid Content
+        content_grid = ttk.Frame(self.overlay_grid)
+        content_grid.pack(fill="both", expand=True, padx=5, pady=5)
+        self.grid_controls = ttk.LabelFrame(content_grid, text="Grid Settings")
         self.grid_controls.pack(fill="x", padx=5, pady=10)
-        
         ttk.Label(self.grid_controls, text="Size:").grid(row=0, column=0, padx=5, pady=2)
         self.grid_size_var = tk.DoubleVar(value=self.map_state.grid_size)
         self.grid_size_entry = ttk.Entry(self.grid_controls, textvariable=self.grid_size_var, width=5)
@@ -309,34 +366,82 @@ class MapBuilderApp:
         ttk.Button(self.grid_controls, text="Color", command=self.choose_grid_color).grid(row=3, column=0, padx=5, pady=5)
         ttk.Button(self.grid_controls, text="Apply", command=self.update_grid_config).grid(row=3, column=1, padx=5, pady=5)
 
-        # Canvas Area
-        self.canvas_frame = ttk.Frame(self.paned)
-        self.paned.add(self.canvas_frame, weight=4)
-
-        # Right Sidebar (Combat/Action Tracker)
-        self.right_sidebar = ttk.Frame(self.paned, width=300)
-        self.paned.add(self.right_sidebar, weight=1)
+        # Right Sidebars
+        self.turn_panel = tk.Frame(self.root, bg=bg, highlightbackground=fg, highlightthickness=1)
+        self.turn_visible = False
+        
+        self.combat_panel = tk.Frame(self.root, bg=bg, highlightbackground=fg, highlightthickness=1)
+        self.combat_visible = False
         
         self.setup_right_sidebar()
         
-        self.canvas = tk.Canvas(self.canvas_frame, bg="#000000", highlightthickness=1, highlightbackground="#39ff14", highlightcolor="#39ff14")
-        self.canvas.pack(fill="both", expand=True)
-        
-        # Bindings
-        self.canvas.bind("<ButtonPress-1>", self.on_canvas_click)
-        self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
-        self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
-        self.canvas.bind("<ButtonPress-3>", self.on_canvas_right_click) # Panning
-        self.canvas.bind("<B3-Motion>", self.on_canvas_pan)
-        # Mouse wheel bindings (Windows/Linux/Mac support)
-        self.canvas.bind("<MouseWheel>", self.on_zoom)
-        self.canvas.bind("<Button-4>", self.on_zoom)
-        self.canvas.bind("<Button-5>", self.on_zoom)
-        self.canvas.bind("<Motion>", self.on_canvas_motion)
+        # Status Bar at bottom left
+        self.status_bar = tk.Frame(self.root, bg=bg, highlightbackground=fg, highlightthickness=1)
+        self.status_bar.place(x=10, rely=1.0, y=-10, anchor="sw")
+        self.lbl_status = ttk.Label(self.status_bar, text="STATUS: READY  |  GRID: 50x50")
+        self.lbl_status.pack(padx=10, pady=2)
 
         # Initial Draw
         self.root.after(10, self.draw_wrapper)
         self.app_mode.trace_add("write", self.on_mode_change)
+
+    def _hide_all_left(self):
+        self.overlay_assets.place_forget()
+        self.overlay_paint.place_forget()
+        self.overlay_preview.place_forget()
+        self.overlay_grid.place_forget()
+        self.assets_visible = False
+        self.paint_visible = False
+        self.preview_visible = False
+        self.grid_visible = False
+
+    def toggle_assets(self):
+        v = self.assets_visible
+        self._hide_all_left()
+        if not v:
+            self.overlay_assets.place(x=70, y=50, width=320, relheight=0.9, height=-100)
+            self.assets_visible = True
+
+    def toggle_paint(self):
+        v = self.paint_visible
+        self._hide_all_left()
+        if not v:
+            self.overlay_paint.place(x=70, y=50, width=320)
+            self.paint_visible = True
+
+    def toggle_preview(self):
+        v = self.preview_visible
+        self._hide_all_left()
+        if not v:
+            self.overlay_preview.place(x=70, y=50, width=320)
+            self.preview_visible = True
+
+    def toggle_grid(self):
+        v = self.grid_visible
+        self._hide_all_left()
+        if not v:
+            self.overlay_grid.place(x=70, y=50, width=320)
+            self.grid_visible = True
+
+    def toggle_combat(self):
+        if self.combat_visible:
+            self.combat_panel.place_forget()
+            self.combat_visible = False
+        else:
+            self.combat_panel.place(relx=1.0, x=-10, y=50, width=320, relheight=0.5, height=-60, anchor="ne")
+            self.combat_visible = True
+            self.turn_panel.place_forget()
+            self.turn_visible = False
+
+    def toggle_turn(self):
+        if self.turn_visible:
+            self.turn_panel.place_forget()
+            self.turn_visible = False
+        else:
+            self.turn_panel.place(relx=1.0, x=-10, y=50, width=320, relheight=0.5, height=-60, anchor="ne")
+            self.turn_visible = True
+            self.combat_panel.place_forget()
+            self.combat_visible = False
 
     def populate_tree(self):
         # Clear existing items
@@ -363,7 +468,7 @@ class MapBuilderApp:
         self.populate_tree()
         if hasattr(self, 'btn_load_bg'):
             if self.app_mode.get() == "WEBER_NHP":
-                self.btn_load_bg.pack(side="left", padx=5, pady=5)
+                self.btn_load_bg.pack(fill="x", padx=5, pady=5)
             else:
                 self.btn_load_bg.pack_forget()
         self.draw_wrapper()
@@ -546,7 +651,7 @@ class MapBuilderApp:
                 self.btn_open.config(state="disabled")
             
             # Show stats if they exist
-            if any(k in item for k in ('hp', 'max_hp', 'structure', 'speed', 'evasion', 'custom_name', 'faction')):
+            if any(k in item for k in ('hp', 'max_hp', 'structure', 'speed', 'evasion', 'custom_name', 'faction', 'repair_cap', 'heat_cap')):
                 self.stats_frame.pack(fill="x", padx=5, pady=10)
                 
                 self.name_var.set(item.get('custom_name', ''))
@@ -558,6 +663,14 @@ class MapBuilderApp:
                 self.lbl_struct.config(text=struct_str)
                 speed_str = f"Speed: {item.get('speed', '-')}"
                 self.lbl_speed.config(text=speed_str)
+                ev_str = f"Evasion: {item.get('evasion', '-')}"
+                self.lbl_evasion.config(text=ev_str)
+                edef_str = f"E-Def: {item.get('e_defense', '-')}"
+                self.lbl_edefense.config(text=edef_str)
+                repair_str = f"Repairs: {item.get('repair_cap', '-')}"
+                self.lbl_repair.config(text=repair_str)
+                heat_str = f"Heat Cap: {item.get('heat_cap', '-')}"
+                self.lbl_heat.config(text=heat_str)
         else:
             self.btn_attach.config(state="disabled")
             self.btn_open.config(state="disabled")
@@ -580,7 +693,13 @@ class MapBuilderApp:
                     hp_match = re.search(r'(?i)(?:hp|hit\s*points?)\s*[:=]?\s*(\d+)', text)
                     struct_match = re.search(r'(?i)(?:structure|struct)\s*[:=]?\s*(\d+)', text)
                     speed_match = re.search(r'(?i)(?:speed|spd)\s*[:=]?\s*(\d+)', text)
-                    evade_match = re.search(r'(?i)(?:evasion|evade)\s*[:=]?\s*(\d+)', text)
+                    
+                    # Fix Evasion / E-Def regex
+                    evade_match = re.search(r'(?i)(?:evasion|evade|eva)\s*[:=-]?\s*(\d+)', text)
+                    edef_match = re.search(r'(?i)(?:e-defense|e-def|e\s*def(?:ense)?|edef)\s*[:=-]?\s*(\d+)', text)
+                    
+                    repair_match = re.search(r'(?i)(?:repair|repairs|repair\s*cap)\s*[:=]?\s*(\d+)', text)
+                    heat_match = re.search(r'(?i)(?:heat|heat\s*cap)\s*[:=]?\s*(\d+)', text)
                     
                     if hp_match and 'max_hp' not in item:
                         item['max_hp'] = int(hp_match.group(1))
@@ -591,6 +710,12 @@ class MapBuilderApp:
                         item['speed'] = int(speed_match.group(1))
                     if evade_match:
                         item['evasion'] = int(evade_match.group(1))
+                    if edef_match:
+                        item['e_defense'] = int(edef_match.group(1))
+                    if repair_match:
+                        item['repair_cap'] = int(repair_match.group(1))
+                    if heat_match:
+                        item['heat_cap'] = int(heat_match.group(1))
                         
                 except Exception as e:
                     print(f"Error parsing stats: {e}")
@@ -598,17 +723,76 @@ class MapBuilderApp:
             self.update_attachment_ui()
 
     def setup_right_sidebar(self):
+        turn_content = ttk.Frame(self.turn_panel)
+        turn_content.pack(fill="both", expand=True, padx=5, pady=5)
+        
+        combat_content = ttk.Frame(self.combat_panel)
+        combat_content.pack(fill="both", expand=True, padx=5, pady=5)
+
         # Round Tracker
         self.round = 1
-        round_frame = ttk.Frame(self.right_sidebar)
+        round_frame = ttk.Frame(turn_content)
         round_frame.pack(fill="x", padx=5, pady=5)
         self.lbl_round = ttk.Label(round_frame, text="Round: 1", font=("Arial", 14, "bold"))
         self.lbl_round.pack(side="left")
         ttk.Button(round_frame, text="Next Round", command=self.next_round).pack(side="right")
         
+        # Turn Tracker panel
+        self.active_turn_idx = None
+        self.acted_this_round = set()
+
+        turn_frame = ttk.LabelFrame(turn_content, text="Turn Order")
+        turn_frame.pack(fill="x", padx=5, pady=5)
+        
+        tf1 = ttk.Frame(turn_frame)
+        tf1.pack(fill="x", pady=2)
+        ttk.Button(tf1, text="Decide First Faction", command=self.decide_first_faction).pack(side="left", padx=2)
+        
+        tf2 = ttk.Frame(turn_frame)
+        tf2.pack(fill="x", pady=2)
+        ttk.Label(tf2, text="Next:").pack(side="left", padx=2)
+        self.cb_turn = ttk.Combobox(tf2, state="readonly", width=15)
+        self.cb_turn.pack(side="left", padx=2)
+        ttk.Button(tf2, text="Start Turn", command=self.start_turn).pack(side="left", padx=2)
+        
+        tf3 = ttk.Frame(turn_frame)
+        tf3.pack(fill="x", pady=2)
+        self.lbl_active_turn = ttk.Label(tf3, text="Active: None")
+        self.lbl_active_turn.pack(side="left", padx=2)
+        ttk.Button(tf3, text="End Turn", command=self.end_turn).pack(side="right", padx=2)
+
+        # Action Tracking inside turn_frame
+        ttk.Separator(turn_frame, orient="horizontal").pack(fill="x", pady=5)
+        
+        self.val_movement = tk.IntVar(value=0)
+        self.val_actions = tk.IntVar(value=2)
+        self.val_free_actions = tk.IntVar(value=0)
+        self.overcharge_used = False
+        
+        act_f1 = ttk.Frame(turn_frame)
+        act_f1.pack(fill="x", pady=2)
+        ttk.Label(act_f1, text="Speed:").pack(side="left", padx=2)
+        ttk.Button(act_f1, text="-", width=2, command=self.dec_movement).pack(side="left")
+        ttk.Label(act_f1, textvariable=self.val_movement, width=3, anchor="center").pack(side="left")
+        ttk.Button(act_f1, text="+", width=2, command=self.inc_movement).pack(side="left")
+        
+        act_f2 = ttk.Frame(turn_frame)
+        act_f2.pack(fill="x", pady=2)
+        ttk.Label(act_f2, text="Actions:").pack(side="left", padx=2)
+        ttk.Label(act_f2, textvariable=self.val_actions, width=2).pack(side="left", padx=1)
+        ttk.Button(act_f2, text="Quick", width=5, command=self.use_quick_action).pack(side="left", padx=1)
+        ttk.Button(act_f2, text="Full", width=4, command=self.use_full_action).pack(side="left", padx=1)
+        self.btn_overcharge = ttk.Button(act_f2, text="OC", width=3, command=self.use_overcharge)
+        self.btn_overcharge.pack(side="left", padx=1)
+        
+        act_f3 = ttk.Frame(turn_frame)
+        act_f3.pack(fill="x", pady=2)
+        ttk.Label(act_f3, text="Free Acts:").pack(side="left", padx=2)
+        ttk.Label(act_f3, textvariable=self.val_free_actions, width=2).pack(side="left", padx=1)
+        ttk.Button(act_f3, text="+", width=3, command=self.use_free_action).pack(side="left", padx=1)
 
         # Tools Panel (Dice / Attacks)
-        tools_frame = ttk.LabelFrame(self.right_sidebar, text="Combat Tools")
+        tools_frame = ttk.LabelFrame(combat_content, text="Combat Tools")
         tools_frame.pack(fill="x", padx=5, pady=5)
         
         dice_f = ttk.Frame(tools_frame)
@@ -647,9 +831,9 @@ class MapBuilderApp:
         ttk.Button(tools_frame, text="Perform Attack", command=self.perform_attack).pack(fill="x", padx=2, pady=5)
         ttk.Button(tools_frame, text="Refresh Combatants", command=self.update_combat_comboboxes).pack(fill="x", padx=2, pady=2)
         
-        # Terminal/History
-        term_frame = ttk.LabelFrame(self.right_sidebar, text="History")
-        term_frame.pack(fill="both", expand=True, padx=5, pady=5)
+        # Terminal/History (Always Visible, bottom right, 50% height)
+        term_frame = ttk.LabelFrame(self.root, text=">> COMBAT_LOG.exe")
+        term_frame.place(relx=1.0, rely=1.0, x=-10, y=-10, width=320, relheight=0.5, height=-10, anchor="se")
         
         term_scroll = ttk.Scrollbar(term_frame)
         term_scroll.pack(side="right", fill="y")
@@ -665,6 +849,14 @@ class MapBuilderApp:
             self.map_state.items[self.selected_item_index]["custom_name"] = self.name_var.get()
             self.update_combat_comboboxes()
 
+    def is_combatant(self, item):
+        if item.get("type", "") == "token": return True
+        p = item.get("path", "").lower()
+        if "token" in p or "frame" in p: return True
+        if any(k in item for k in ('hp', 'max_hp', 'structure', 'speed', 'evasion', 'repair_cap', 'heat_cap')): return True
+        if item.get("faction", "Neutral") != "Neutral": return True
+        return False
+
     def get_token_name(self, idx):
         item = self.map_state.items[idx]
         if item.get("custom_name"):
@@ -677,18 +869,182 @@ class MapBuilderApp:
     def update_combat_comboboxes(self):
         names = []
         for idx, item in enumerate(self.map_state.items):
-            p = item["path"].lower()
-            if "token" in p or "frame" in p:
+            if self.is_combatant(item):
                 names.append(f"[{idx}] {self.get_token_name(idx)}")
         
         self.cb_attacker['values'] = names
         self.cb_target['values'] = names
+        self.update_turn_combobox()
+
+    def update_turn_combobox(self):
+        if not hasattr(self, "acted_this_round"):
+            self.acted_this_round = set()
+            self.active_turn_idx = None
+            
+        names = []
+        for idx, item in enumerate(self.map_state.items):
+            if self.is_combatant(item):
+                if idx not in self.acted_this_round and idx != self.active_turn_idx:
+                    fac = item.get("faction", "Neutral")
+                    names.append(f"[{idx}] {fac} - {self.get_token_name(idx)}")
+                    
+        self.cb_turn['values'] = names
+        if names:
+            self.cb_turn.current(0)
+        else:
+            self.cb_turn.set('')
+
+    def decide_first_faction(self):
+        import random
+        if not hasattr(self, "acted_this_round"):
+            self.acted_this_round = set()
+            
+        factions = set()
+        for idx, item in enumerate(self.map_state.items):
+            if self.is_combatant(item):
+                if idx not in self.acted_this_round:
+                    factions.add(item.get("faction", "Neutral"))
+        
+        if not factions:
+            self.log_to_terminal("> No combatants found.")
+            return
+            
+        chosen = random.choice(list(factions))
+        self.log_to_terminal(f"=== {chosen.upper()} GOES FIRST ===")
+
+    def start_turn(self):
+        idx = self.get_index_from_cb(self.cb_turn.get())
+        if idx is None:
+            self.log_to_terminal("> Select a combatant for the next turn.")
+            return
+            
+        if getattr(self, "active_turn_idx", None) is not None:
+            self.end_turn(auto_advance=False)
+            
+        self.active_turn_idx = idx
+        name = self.get_token_name(idx)
+        self.lbl_active_turn.config(text=f"Active: {name}")
+        self.log_to_terminal(f"=== {name}'s Turn Begins ===")
+        
+        # Add Turn marker dynamically
+        item = self.map_state.items[idx]
+        if "markers" not in item:
+            item["markers"] = []
+            
+        # Try to find Turn.png
+        turn_marker_path = None
+        if self.map_state.markers_directory:
+            possible_path = os.path.join(self.map_state.markers_directory, "Turn.png")
+            if os.path.exists(possible_path):
+                turn_marker_path = possible_path
+                
+        if turn_marker_path and turn_marker_path not in item["markers"]:
+            item["markers"].append(turn_marker_path)
+            
+        # Reset Action Tracker points
+        try:
+            speed = int(item.get("speed", 0))
+        except:
+            speed = 0
+            
+        if hasattr(self, 'val_movement'):
+            self.val_movement.set(speed)
+            self.val_actions.set(2)
+            self.val_free_actions.set(0)
+            self.overcharge_used = False
+            self.btn_overcharge.config(state="normal")
+            
+        self.update_turn_combobox()
+        self.draw_wrapper()
+
+    def end_turn(self, auto_advance=True):
+        idx = getattr(self, "active_turn_idx", None)
+        if idx is None:
+            return
+            
+        name = self.get_token_name(idx)
+        self.log_to_terminal(f"=== {name}'s Turn Ends ===")
+        
+        item = self.map_state.items[idx]
+        if "markers" in item:
+            to_remove = []
+            for m in item["markers"]:
+                if os.path.basename(m).lower() == "turn.png":
+                    to_remove.append(m)
+            for m in to_remove:
+                item["markers"].remove(m)
+                
+        if not hasattr(self, "acted_this_round"):
+            self.acted_this_round = set()
+        self.acted_this_round.add(idx)
+        
+        self.active_turn_idx = None
+        self.lbl_active_turn.config(text="Active: None")
+        
+        self.update_turn_combobox()
+        self.draw_wrapper()
+        
+        if auto_advance and not self.cb_turn['values']:
+            has_tokens = any(1 for item in self.map_state.items if "token" in item["path"].lower() or "frame" in item["path"].lower())
+            if has_tokens:
+                self.root.after(100, self.next_round)
+
+    def dec_movement(self):
+        v = self.val_movement.get()
+        if v > 0:
+            self.val_movement.set(v - 1)
+            self.log_to_terminal(f"> Used 1 movement. ({v-1} left)")
+
+    def inc_movement(self):
+        v = self.val_movement.get()
+        self.val_movement.set(v + 1)
+        self.log_to_terminal(f"> Gained 1 movement. ({v+1} left)")
+
+    def use_quick_action(self):
+        v = self.val_actions.get()
+        if v >= 1:
+            self.val_actions.set(v - 1)
+            self.log_to_terminal(f"> Used a Quick Action. ({v-1} acts left)")
+        else:
+            self.log_to_terminal(f"> Not enough actions for a Quick Action!")
+
+    def use_full_action(self):
+        v = self.val_actions.get()
+        if v >= 2:
+            self.val_actions.set(v - 2)
+            self.log_to_terminal(f"> Used a Full Action. ({v-2} acts left)")
+        else:
+            self.log_to_terminal(f"> Not enough actions for a Full Action!")
+
+    def use_free_action(self):
+        v = self.val_free_actions.get()
+        self.val_free_actions.set(v + 1)
+        self.log_to_terminal(f"> A free action was used. ({v+1} total taken)")
+
+    def use_overcharge(self):
+        if not self.overcharge_used:
+            self.overcharge_used = True
+            self.val_actions.set(self.val_actions.get() + 1)
+            self.btn_overcharge.config(state="disabled")
+            self.log_to_terminal(f"> OVERCHARGE! Gained 1 Quick Action.")
 
     def next_round(self):
         self.round += 1
         self.lbl_round.config(text=f"Round: {self.round}")
         self.log_to_terminal(f"=== ROUND {self.round} BEGINS ===")
         
+        self.update_turn_combobox()
+        self.draw_wrapper()
+        if hasattr(self, "acted_this_round"):
+            self.acted_this_round.clear()
+            
+        # Ensure any lingering turn markers are removed
+        for item in self.map_state.items:
+            if "markers" in item:
+                item["markers"] = [m for m in item["markers"] if os.path.basename(m).lower() != "turn.png"]
+                
+        self.update_turn_combobox()
+        self.draw_wrapper()
     def log_to_terminal(self, msg):
         self.term_text.config(state="normal")
         self.term_text.insert("end", msg + "\n")
@@ -728,17 +1084,47 @@ class MapBuilderApp:
     def roll_custom_dice(self):
         import random
         dice_str = self.dice_var.get()
-        res = self.roll_dice_string(dice_str)
-        if res:
-            rolls, total = res
-            parsed = self.parse_dice(dice_str)
-            mod_str = ""
-            if parsed[2] > 0: mod_str = f"+{parsed[2]}"
-            elif parsed[2] < 0: mod_str = f"{parsed[2]}"
-                
-            self.log_to_terminal(f"> Rolled {dice_str}: {rolls}{mod_str} = {total}")
-        else:
+        parsed = self.parse_dice(dice_str)
+        if not parsed:
             self.log_to_terminal(f"> Invalid dice format: {dice_str}")
+            return
+
+        overlay = tk.Frame(self.root, bg=self.map_state.ui_bg_color, highlightbackground=self.map_state.ui_fg_color, highlightthickness=3)
+        overlay.place(relx=0.5, rely=0.5, anchor="center", width=250, height=200)
+        
+        lbl_icon = tk.Label(overlay, text="🎲", font=("Segoe UI Emoji", 48), bg=self.map_state.ui_bg_color, fg=self.map_state.ui_fg_color)
+        lbl_icon.pack(expand=True, pady=(20, 0))
+        
+        lbl_val = tk.Label(overlay, text="?", font=("Consolas", 32, "bold"), bg=self.map_state.ui_bg_color, fg=self.map_state.ui_fg_color)
+        lbl_val.pack(expand=True, pady=(0, 20))
+        
+        rolls_made = 0
+        max_rolls = 10
+        num_dice, die_sides, mod = parsed
+        
+        def animate_roll():
+            nonlocal rolls_made
+            if rolls_made < max_rolls:
+                fake_val = sum(random.randint(1, die_sides) for _ in range(num_dice)) + mod
+                lbl_val.config(text=str(fake_val))
+                rolls_made += 1
+                self.root.after(100, animate_roll)
+            else:
+                res = self.roll_dice_string(dice_str)
+                if res:
+                    rolls_res, total = res
+                    lbl_val.config(text=str(total))
+                    
+                    mod_str = ""
+                    if mod > 0: mod_str = f"+{mod}"
+                    elif mod < 0: mod_str = f"{mod}"
+                        
+                    self.log_to_terminal(f"> Rolled {dice_str}: {rolls_res}{mod_str} = {total}")
+                
+                self.root.after(1500, overlay.destroy)
+
+        animate_roll()
+
 
     def get_index_from_cb(self, cb_str):
         import re
@@ -749,6 +1135,11 @@ class MapBuilderApp:
 
     def perform_attack(self):
         import random
+        if getattr(self, "active_turn_idx", None) is None:
+            self.log_to_terminal("> Attack Error: A Turn must be active to perform an attack.")
+            messagebox.showwarning("Attack Error", "You must start someone's turn before attacking!")
+            return
+
         atk_idx = self.get_index_from_cb(self.cb_attacker.get())
         tgt_idx = self.get_index_from_cb(self.cb_target.get())
         
@@ -760,7 +1151,10 @@ class MapBuilderApp:
         tgt_name = self.get_token_name(tgt_idx)
         
         tgt_item = self.map_state.items[tgt_idx]
-        evasion = tgt_item.get("evasion", 10) # default evasion
+        
+        is_edefense = messagebox.askyesno("Attack Defense", f"Does this attack target E-Defense?\n(Yes = E-Defense / No = Evasion)")
+        defense_val = tgt_item.get("e_defense", 8) if is_edefense else tgt_item.get("evasion", 8)
+        defense_name = "E-Defense" if is_edefense else "Evasion"
         
         # Attack Roll
         try:
@@ -774,17 +1168,25 @@ class MapBuilderApp:
         # Log Attack
         if d20 == 20: # CRITICAL HIT
             self.log_to_terminal(f"### {atk_name} violently attacks {tgt_name} ###")
-            self.log_to_terminal(f"> Attack: [CRIT 20] + {bonus} = {atk_total} vs Evade {evasion}")
+            self.log_to_terminal(f"> Attack: [CRIT 20] + {bonus} = {atk_total} vs {defense_name} {defense_val}")
             self.apply_damage(tgt_idx, self.atk_dmg_var.get(), is_crit=True, resist=self.res_var.get())
+            self.prompt_marker_after_attack(tgt_idx)
             
-        elif atk_total >= evasion: # HIT
+        elif atk_total >= defense_val: # HIT
             self.log_to_terminal(f"### {atk_name} attacks {tgt_name} ###")
-            self.log_to_terminal(f"> Attack: {d20} + {bonus} = {atk_total} vs Evade {evasion} (HIT)")
+            self.log_to_terminal(f"> Attack: {d20} + {bonus} = {atk_total} vs {defense_name} {defense_val} (HIT)")
             self.apply_damage(tgt_idx, self.atk_dmg_var.get(), is_crit=False, resist=self.res_var.get())
+            self.prompt_marker_after_attack(tgt_idx)
             
         else: # MISS
             self.log_to_terminal(f"### {atk_name} attacks {tgt_name} ###")
-            self.log_to_terminal(f"> Attack: {d20} + {bonus} = {atk_total} vs Evade {evasion} (MISS)")
+            self.log_to_terminal(f"> Attack: {d20} + {bonus} = {atk_total} vs {defense_name} {defense_val} (MISS)")
+
+    def prompt_marker_after_attack(self, tgt_idx):
+        tgt_name = self.get_token_name(tgt_idx)
+        if messagebox.askyesno("Apply Marker", f"Does the attack apply any condition/marker to {tgt_name}?"):
+            self.selected_item_index = tgt_idx
+            self.show_marker_menu()
 
     def apply_damage(self, target_idx, dmg_str, is_crit=False, resist=False):
         import math
@@ -874,6 +1276,7 @@ class MapBuilderApp:
     def update_faction(self, event=None):
         if self.selected_item_index is not None:
             self.map_state.items[self.selected_item_index]["faction"] = self.faction_var.get()
+            self.update_combat_comboboxes()
             self.draw_wrapper()
 
     def clear_paint(self):
@@ -965,10 +1368,6 @@ class MapBuilderApp:
                 self.canvas.create_polygon(pts, outline=self.map_state.grid_color, fill="", tags="grid", outlinestipple="gray50")
 
         # Draw Items with Z-Index (Tiles first, then Tokens)
-        # Helper to check if item is token
-        def is_token(path):
-            p = path.lower()
-            return "token" in p or "frame" in p
 
         # Split items
         tiles = []
@@ -976,7 +1375,7 @@ class MapBuilderApp:
         
         # Store index to keep track of selection
         for idx, item in enumerate(self.map_state.items):
-            if is_token(item["path"]):
+            if self.is_combatant(item):
                 tokens.append((idx, item))
             else:
                 tiles.append((idx, item))
@@ -1088,9 +1487,7 @@ class MapBuilderApp:
         found = -1
         for i in range(len(self.map_state.items) - 1, -1, -1):
             item = self.map_state.items[i]
-            p = item["path"].lower()
-            is_token = "token" in p or "frame" in p
-            if item["q"] == q and item["r"] == r and is_token:
+            if item["q"] == q and item["r"] == r and self.is_combatant(item):
                 found = i
                 break
 
@@ -1118,8 +1515,14 @@ class MapBuilderApp:
                 stats.append(f"  >ST: {item.get('structure', '-')}")
             if "evasion" in item:
                 stats.append(f"  >EV: {item.get('evasion', '-')}")
+            if "e_defense" in item:
+                stats.append(f"  >E-DEF: {item.get('e_defense', '-')}")
             if "speed" in item:
                 stats.append(f"  >SP: {item.get('speed', '-')}")
+            if "repair_cap" in item:
+                stats.append(f"  >REP: {item.get('repair_cap', '-')}")
+            if "heat_cap" in item:
+                stats.append(f"  >HEAT: {item.get('heat_cap', '-')}")
                 
             if stats:
                 lines.append(">STATS:")
@@ -1156,6 +1559,25 @@ class MapBuilderApp:
         self.tooltip_x = x
         self.tooltip_y = y
 
+    def erase_at(self, wx, wy):
+        radius = 20 / self.scale # Erase radius
+        modified = False
+        remaining = []
+        for line in self.map_state.drawings:
+            removed = False
+            for p in line["points"]:
+                dist = math.hypot(p["x"] - wx, p["y"] - wy)
+                if dist < radius:
+                    removed = True
+                    break
+            if not removed:
+                remaining.append(line)
+            else:
+                modified = True
+        if modified:
+            self.map_state.drawings = remaining
+            self.draw_wrapper()
+
     def on_canvas_click(self, event):
         cx, cy = self.canvas.winfo_width() / 2, self.canvas.winfo_height() / 2
         
@@ -1164,6 +1586,9 @@ class MapBuilderApp:
         world_y = (event.y - cy) / self.scale + self.camera_y
         
         if self.paint_mode.get():
+            if self.paint_color.get() == "eraser":
+                self.erase_at(world_x, world_y)
+                return
             self.current_drawing = {"color": self.paint_color.get(), "points": [{"x": world_x, "y": world_y}]}
             self.map_state.drawings.append(self.current_drawing)
             return
@@ -1207,6 +1632,12 @@ class MapBuilderApp:
             
             self.selected_item_index = found if found != -1 else None
             self.drag_item_index = self.selected_item_index # Prepare for drag
+            
+            if self.drag_item_index is not None and self.drag_item_index == getattr(self, "active_turn_idx", None):
+                self.drag_start_hex = (self.map_state.items[self.drag_item_index]["q"], self.map_state.items[self.drag_item_index]["r"])
+            else:
+                self.drag_start_hex = None
+                
             self.update_attachment_ui()
             self.draw_wrapper()
 
@@ -1241,9 +1672,13 @@ class MapBuilderApp:
         world_x = (event.x - cx) / self.scale + self.camera_x
         world_y = (event.y - cy) / self.scale + self.camera_y
         
-        if self.paint_mode.get() and self.current_drawing is not None:
-            self.current_drawing["points"].append({"x": world_x, "y": world_y})
-            self.draw_wrapper()
+        if self.paint_mode.get():
+            if self.paint_color.get() == "eraser":
+                self.erase_at(world_x, world_y)
+                return
+            if self.current_drawing is not None:
+                self.current_drawing["points"].append({"x": world_x, "y": world_y})
+                self.draw_wrapper()
             return
             
         # If in select mode and dragging item
@@ -1264,6 +1699,26 @@ class MapBuilderApp:
             self.draw_wrapper()
             return
             
+        if getattr(self, "drag_item_index", None) is not None and getattr(self, "drag_item_index", None) == getattr(self, "active_turn_idx", None):
+            item = self.map_state.items[self.drag_item_index]
+            if getattr(self, "drag_start_hex", None):
+                q1, r1 = self.drag_start_hex
+                q2, r2 = item["q"], item["r"]
+                dist = int((abs(q1 - q2) + abs(q1 + r1 - q2 - r2) + abs(r1 - r2)) / 2)
+                if dist > 0:
+                    current_mov = self.val_movement.get()
+                    if dist > current_mov:
+                        item["q"], item["r"] = q1, r1
+                        self.log_to_terminal(f"> Movement failed: Need {dist} spaces, but only {current_mov} left!")
+                        self.draw_wrapper()
+                    else:
+                        self.val_movement.set(max(0, current_mov - dist))
+                        name = self.get_token_name(self.drag_item_index)
+                        self.log_to_terminal(f"> {name} moved {dist} spaces. ({self.val_movement.get()} left)")
+                        
+                        # Update drag start hex so that subsequent dragging calculates again
+                        self.drag_start_hex = (q2, r2)
+                    
         self.drag_item_index = None
 
     # --- File Ops ---
